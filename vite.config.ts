@@ -5,14 +5,7 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [
-    react({
-      babel: {
-        plugins: [
-          // Inject data-source attribute for AI agent source location
-          "./scripts/babel-plugin-jsx-source-location.cjs",
-        ],
-      },
-    }),
+    react(),
     tailwindcss(),
   ],
   resolve: { alias: { "@": path.resolve(__dirname, "./src") } },
