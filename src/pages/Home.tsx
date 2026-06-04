@@ -3,10 +3,12 @@ Design reminder — Premium Japanese izakaya mobile UI.
 Use warm cream, dark wood, amber glow, handcrafted rhythm.
 Avoid generic SaaS styling.
 */
-import { useEffect, useMemo, useState, type JSX } from "react";
-import { ChefHat, GripVertical, RefreshCcw, Settings2, Soup, Timer, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { ChefHat, GripVertical, RefreshCcw, Settings2, Soup, Timer, X, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import mascotImage from "@/assets/shiba-chef-portrait.png";
+import { findBestRecipe, getRandomRecipe } from "@/data/recipes";
+import { toPng } from "html-to-image";
 
 type Screen = "home" | "cooking" | "menu";
 type Provider = "openai" | "gemini";
@@ -192,9 +194,22 @@ const fallbackRecipe = (ings: string[]): Recipe => ({
 });
 
 async function fetchRecipe(provider: Provider, apiKey: string, baseUrl: string, ingredients: string[]) {
+  // 沒 API Key → 直接從內建食譜庫配對
   if (!apiKey.trim()) {
-    await new Promise((r) => setTimeout(r, 2200));
-    return fallbackRecipe(ingredients);
+    await new Promise((r) => setTimeout(r, 1000)); // 模擬料理思考時間
+    const matched = findBestRecipe(ingredients);
+    if (matched) {
+      // 根據用戶實際食材微調 shibaTalk
+      const used = ingredients.slice(0, 5).join("、");
+      return {
+        ...matched,
+        shibaTalk: `老闆！今天用 ${used} 來做一道好料，這道菜連我自己都餓了汪！`,
+        ingredientsUsed: [...new Set([...matched.ingredientsUsed, ...ingredients]).values()].filter(
+          i => matched.ingredientTags.includes(i) || ingredients.includes(i)
+        ),
+      };
+    }
+    return getRandomRecipe();
   }
   if (provider === "openai") {
     const res = await fetch(baseUrl || "https://api.openai.com/v1/chat/completions", {
@@ -388,6 +403,8 @@ export default function Home() {
   const [diary, setDiary] = useState<SavedRecipe[]>(() => JSON.parse(localStorage.getItem("sk-diary") || "[]"));
   const [showFav, setShowFav] = useState(false);
   const [showDiary, setShowDiary] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const shareRef = useRef<HTMLDivElement>(null);
   const current = useMemo(() => categories.find(([key]) => key === activeTab) || categories[0], [activeTab]);
   const currentItems = ingredientOrders[activeTab] || current[3];
   const orderedTabs = tabOrder.map((key) => categories.find(([k]) => k === key)!).filter(Boolean);
@@ -467,6 +484,58 @@ export default function Home() {
     const next = [saved, ...diary].slice(0, 30);
     setDiary(next);
     localStorage.setItem("sk-diary", JSON.stringify(next));
+  };
+  const shareRecipe = async () => {
+    if (!recipe || !shareRef.current) return;
+    setSharing(true);
+    try {
+      // 開一個新視窗來生成分享圖（避免干擾主畫面）
+      const shareWin = window.open("", "_blank", "width=500,height=800");
+      if (!shareWin) { toast.error("請允許彈出視窗來分享汪！"); setSharing(false); return; }
+      shareWin.document.write(`
+        <!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8">
+        <title>阿柴食堂 - ${recipe.dishName}</title>
+        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Noto+Serif+TC:wght@700;900&display=swap" rel="stylesheet">
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: 'Noto Sans TC', sans-serif; background: #f8ead0; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+          .card { max-width: 420px; width: 100%; background: #FDF8EB; border-radius: 2.4rem; overflow: hidden; padding: 24px; box-shadow: 0 20px 40px rgba(80,40,10,0.15); }
+          h1 { font-family: 'Noto Serif TC', serif; font-size: 26px; font-weight: 900; color: #5d311b; text-align: center; }
+          .badge { display: inline-block; background: #fff3d8; border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700; color: #885c39; }
+          .section { margin-top: 16px; }
+          .section h3 { font-size: 13px; font-weight: 700; color: #ac6d35; letter-spacing: 0.12em; margin-bottom: 8px; }
+          .step { background: #fff8ee; border-radius: 14px; padding: 10px 14px; margin-bottom: 8px; font-size: 13px; line-height: 1.8; color: #6f4125; }
+          .ing { display: inline-block; background: #f3dfbe; border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 700; color: #74452a; margin: 2px; }
+          .footer { text-align: center; margin-top: 20px; padding-top: 16px; border-top: 2px dashed #d8b486; font-size: 13px; font-weight: 700; color: #885c39; }
+          .time { text-align: center; font-size: 15px; font-weight: 900; color: #5f3219; margin-top: 8px; }
+          .shiba { text-align: center; font-size: 14px; line-height: 1.8; color: #74452a; margin-top: 8px; font-weight: 700; padding: 10px; background: #fff3d8; border-radius: 14px; }
+        </style></head><body>
+        <div class="card">
+          <div class="badge" style="text-align:center;display:block;width:fit-content;margin:0 auto;">🏮 IZAKAYA MODE</div>
+          <h1 style="margin-top:12px;">${recipe.dishName}</h1>
+          <div class="time">⏱ ${recipe.cookingTime}</div>
+          <div class="shiba">${recipe.shibaTalk}</div>
+          <div class="section">
+            <h3>🥘 食材</h3>
+            ${recipe.ingredientsUsed.map(i => `<span class="ing">${i}</span>`).join("")}
+          </div>
+          <div class="section">
+            <h3>🧂 調味重點</h3>
+            ${recipe.seasoningNotes.map(n => `<div class="step">${n}</div>`).join("")}
+          </div>
+          <div class="section">
+            <h3>📋 料理步驟</h3>
+            ${recipe.cookingSteps.map((s, i) => `<div class="step"><strong>Step ${i+1}</strong> ${s}</div>`).join("")}
+          </div>
+          <div class="footer">🐾 阿柴食堂 · Shiba Kitchen 🐾</div>
+        </div></body></html>
+      `);
+      shareWin.document.close();
+      toast.success("📸 食譜已開新分頁！可截圖分享或列印汪！");
+    } catch (e) {
+      toast.error("分享失敗汪～請截圖手動分享！");
+    }
+    setSharing(false);
   };
   const loadRecipe = (r: SavedRecipe) => {
     setRecipe(r);
@@ -626,6 +695,7 @@ export default function Home() {
             </div>
             <div className="relative z-10 mt-5 flex gap-3">
               <button onClick={saveFav} className="handdrawn-button flex flex-1 items-center justify-center gap-3 rounded-[1.7rem] px-5 py-4 text-base font-black text-white"><span className="text-lg">❤️</span> 收藏食譜</button>
+              <button onClick={shareRecipe} disabled={sharing} className="handdrawn-button flex flex-1 items-center justify-center gap-3 rounded-[1.7rem] px-5 py-4 text-base font-black text-white"><Share2 className="h-5 w-5" /> {sharing ? "分享中..." : "分享食譜"}</button>
               <button onClick={resetAll} className="handdrawn-button flex flex-1 items-center justify-center gap-3 rounded-[1.7rem] px-5 py-4 text-base font-black text-white"><RefreshCcw className="h-5 w-5" /> 返回廚房</button>
             </div>
           </div>
