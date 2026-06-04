@@ -499,498 +499,6 @@ function CookingMiniAnimation({ selected, mode }: { selected: string[]; mode: Co
   );
 }
 
-export default function Home() {
-  console.log("HOME_COMPONENT_LOADED_12345");
-  const [screen, setScreen] = useState<Screen>("home");
-  const [activeTab, setActiveTab] = useState("meat");
-  const [selected, setSelected] = useState<string[]>([]);
-  const [recipe, setRecipe] = useState<Recipe | null>(null);
-  const [provider, setProvider] = useState<Provider>(() => (localStorage.getItem("sk-provider") as Provider) || "openai");
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("sk-key") || "");
-  const [baseUrl, setBaseUrl] = useState(() => localStorage.getItem("sk-url") || "");
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [statusText, setStatusText] = useState("正在整理冰箱情報...");
-  const [showAd, setShowAd] = useState(false);
-  const [canCloseAd, setCanCloseAd] = useState(false);
-  const [cookingMode, setCookingMode] = useState<CookingMode>("stir");
-  const [cookingStep, setCookingStep] = useState<number | null>(null);
-  const [ingredientOrders, setIngredientOrders] = useState<Record<string, string[]>>(categoryOrderMap);
-  const [tabOrder, setTabOrder] = useState<string[]>(tabOrderSeed);
-  const [draggingTab, setDraggingTab] = useState<string | null>(null);
-  const [favorites, setFavorites] = useState<SavedRecipe[]>(() => JSON.parse(localStorage.getItem("sk-fav") || "[]"));
-  const [diary, setDiary] = useState<SavedRecipe[]>(() => JSON.parse(localStorage.getItem("sk-diary") || "[]"));
-  const [showFav, setShowFav] = useState(false);
-  const [showDiary, setShowDiary] = useState(false);
-  const [sharing, setSharing] = useState(false);
-  const shareRef = useRef<HTMLDivElement>(null);
-  const current = useMemo(() => categories.find(([key]) => key === activeTab) || categories[0], [activeTab]);
-  const currentItems = ingredientOrders[activeTab] || current[3];
-  const orderedTabs = tabOrder.map((key) => categories.find(([k]) => k === key)!).filter(Boolean);
-
-  useEffect(() => localStorage.setItem("sk-provider", provider), [provider]);
-  useEffect(() => localStorage.setItem("sk-key", apiKey), [apiKey]);
-  useEffect(() => localStorage.setItem("sk-url", baseUrl), [baseUrl]);
-
-  useEffect(() => {
-    if (screen !== "cooking") return;
-    let dead = false;
-    let apiDone = false;
-    let adDone = false;
-    const goIfReady = () => { if (!dead && apiDone && adDone) setScreen("menu"); };
-    setShowAd(true);
-    setCanCloseAd(false);
-    setStatusText("大將正在起鍋爆香中...");
-    const t1 = window.setTimeout(() => setCanCloseAd(true), 1800);
-    const t2 = window.setTimeout(() => { adDone = true; setShowAd(false); goIfReady(); }, 3200);
-    fetchRecipe(provider, apiKey, baseUrl, selected).then((r) => {
-      if (dead) return;
-      setRecipe(r);
-      setStatusText("香氣差不多了，正在裝盤...");
-      apiDone = true;
-      // auto-add to diary
-      const did = Date.now().toString();
-      const dEntry: SavedRecipe = { ...r, savedAt: new Date().toISOString(), id: did };
-      setDiary(prev => {
-        const n = [dEntry, ...prev].slice(0, 30);
-        localStorage.setItem("sk-diary", JSON.stringify(n));
-        return n;
-      });
-      goIfReady();
-    }).catch(() => {
-      if (dead) return;
-      if (matchBuiltinRecipe(selected)) {
-        setRecipe(matchBuiltinRecipe(selected)!);
-        toast.success("內建食譜庫已為你找到合適料理汪！");
-        apiDone = true;
-        goIfReady();
-      } else {
-        toast.error("AI 連線失敗，先用示範食譜救場汪！");
-        setRecipe(fallbackRecipe(selected));
-        apiDone = true;
-        goIfReady();
-      }
-    });
-    return () => { dead = true; clearTimeout(t1); clearTimeout(t2); };
-  }, [screen, provider, apiKey, baseUrl, selected]);
-
-  const toggle = (item: string) => setSelected((prev) => prev.includes(item) ? prev.filter((v) => v !== item) : [...prev, item]);
-  const start = () => {
-    if (!selected.length) return toast.warning("先選幾樣食材再請大將出手吧！");
-    setRecipe(null);
-    setScreen("cooking");
-  };
-  const resetAll = () => { setSelected([]); setRecipe(null); setActiveTab("meat"); setIngredientOrders(categoryOrderMap); setTabOrder(tabOrderSeed); setScreen("home"); };
-  const handleTabDrop = (targetKey: string) => {
-    if (!draggingTab || draggingTab === targetKey) return;
-    setTabOrder((prev) => reorder(prev, draggingTab, targetKey));
-    setDraggingTab(null);
-  };
-  const closeAd = () => { if (!canCloseAd) return; setShowAd(false); setCanCloseAd(false); };
-  const isFav = (id: string) => favorites.some(f => f.id === id);
-  const saveFav = () => {
-    if (!recipe) return;
-    const id = Date.now().toString();
-    const saved: SavedRecipe = { ...recipe, savedAt: new Date().toISOString(), id };
-    const next = [saved, ...favorites].slice(0, 20);
-    setFavorites(next);
-    localStorage.setItem("sk-fav", JSON.stringify(next));
-    toast.success("❤️ 已收藏到我的酒單！");
-  };
-  const unFav = (id: string) => {
-    const next = favorites.filter(f => f.id !== id);
-    setFavorites(next);
-    localStorage.setItem("sk-fav", JSON.stringify(next));
-    toast.success("已從收藏中移除～");
-  };
-  const addDiary = () => {
-    if (!recipe) return;
-    const id = Date.now().toString();
-    const saved: SavedRecipe = { ...recipe, savedAt: new Date().toISOString(), id };
-    const next = [saved, ...diary].slice(0, 30);
-    setDiary(next);
-    localStorage.setItem("sk-diary", JSON.stringify(next));
-  };
-  const shareRecipe = async () => {
-    if (!recipe || !shareRef.current) return;
-    setSharing(true);
-    try {
-      // 開一個新視窗來生成分享圖（避免干擾主畫面）
-      const shareWin = window.open("", "_blank", "width=500,height=800");
-      if (!shareWin) { toast.error("請允許彈出視窗來分享汪！"); setSharing(false); return; }
-      shareWin.document.write(`
-        <!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8">
-        <title>阿柴食堂 - ${recipe.dishName}</title>
-        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Noto+Serif+TC:wght@700;900&display=swap" rel="stylesheet">
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: 'Noto Sans TC', sans-serif; background: #f8ead0; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
-          .card { max-width: 420px; width: 100%; background: #FDF8EB; border-radius: 2.4rem; overflow: hidden; padding: 24px; box-shadow: 0 20px 40px rgba(80,40,10,0.15); }
-          h1 { font-family: 'Noto Serif TC', serif; font-size: 26px; font-weight: 900; color: #5d311b; text-align: center; }
-          .badge { display: inline-block; background: #fff3d8; border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700; color: #885c39; }
-          .section { margin-top: 16px; }
-          .section h3 { font-size: 13px; font-weight: 700; color: #ac6d35; letter-spacing: 0.12em; margin-bottom: 8px; }
-          .step { background: #fff8ee; border-radius: 14px; padding: 10px 14px; margin-bottom: 8px; font-size: 13px; line-height: 1.8; color: #6f4125; }
-          .ing { display: inline-block; background: #f3dfbe; border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 700; color: #74452a; margin: 2px; }
-          .footer { text-align: center; margin-top: 20px; padding-top: 16px; border-top: 2px dashed #d8b486; font-size: 13px; font-weight: 700; color: #885c39; }
-          .time { text-align: center; font-size: 15px; font-weight: 900; color: #5f3219; margin-top: 8px; }
-          .shiba { text-align: center; font-size: 14px; line-height: 1.8; color: #74452a; margin-top: 8px; font-weight: 700; padding: 10px; background: #fff3d8; border-radius: 14px; }
-        </style></head><body>
-        <div class="card">
-          <div class="badge" style="text-align:center;display:block;width:fit-content;margin:0 auto;">🏮 IZAKAYA MODE</div>
-          <h1 style="margin-top:12px;">${recipe.dishName}</h1>
-          <div class="time">⏱ ${recipe.cookingTime}</div>
-          <div class="shiba">${recipe.shibaTalk}</div>
-          <div class="section">
-            <h3>🥘 食材</h3>
-            ${recipe.ingredientsUsed.map(i => `<span class="ing">${i}</span>`).join("")}
-          </div>
-          <div class="section">
-            <h3>🧂 調味重點</h3>
-            ${recipe.seasoningNotes.map(n => `<div class="step">${n}</div>`).join("")}
-          </div>
-          <div class="section">
-            <h3>📋 料理步驟</h3>
-            ${recipe.cookingSteps.map((s, i) => `<div class="step"><strong>Step ${i+1}</strong> ${s}</div>`).join("")}
-          </div>
-          <div class="footer">🐾 阿柴食堂 · Shiba Kitchen 🐾</div>
-        </div></body></html>
-      `);
-      shareWin.document.close();
-      toast.success("📸 食譜已開新分頁！可截圖分享或列印汪！");
-    } catch (e) {
-      toast.error("分享失敗汪～請截圖手動分享！");
-    }
-    setSharing(false);
-  };
-  const loadRecipe = (r: SavedRecipe) => {
-    setRecipe(r);
-    setSelected(r.ingredientsUsed);
-    setScreen("menu");
-  };
-
-  return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f8ead0_0%,#fdf8eb_28%,#f7ead3_100%)] p-4 text-[#5f361d]">
-      <div className="handdrawn-paper mx-auto max-w-[430px] overflow-hidden rounded-[2.4rem] bg-[#FDF8EB]">
-        {screen === "home" && (
-          <div className="relative min-h-screen overflow-hidden pb-32">
-            <div className="grain-overlay" />
-            <div className="px-5 pt-5">
-              <div className="mb-4 flex items-center justify-between">
-                <div className="rounded-full border border-[#e4caa0] bg-white/65 px-4 py-2 text-[11px] font-black tracking-[0.28em] text-[#885c39]">IZAKAYA MODE</div>
-                <div className="flex gap-2">
-                  <button onClick={() => setShowFav(true)} className="flex h-11 w-11 items-center justify-center rounded-full border border-[#d4b48c] bg-white/70 text-[#b86423]"><span className="text-lg">❤️</span></button>
-                  <button onClick={() => setShowDiary(true)} className="flex h-11 w-11 items-center justify-center rounded-full border border-[#d4b48c] bg-white/70 text-[#b86423]"><span className="text-lg">📓</span></button>
-                  <button onClick={() => setSettingsOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-full border border-[#d4b48c] bg-white/70"><Settings2 className="h-5 w-5" /></button>
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="scribble-circle mx-auto mb-5 h-42 w-42 overflow-hidden rounded-full bg-[#fff8ea]">
-                  <img src={mascotImage} alt="阿柴主廚插圖" className="h-full w-full object-cover" />
-                </div>
-                <h1 className="font-serif-jp text-[2.2rem] font-black tracking-[0.12em] text-[#5d311b]">阿柴食堂</h1>
-                <div className="handdrawn-badge mx-auto mt-3 inline-flex rounded-full px-5 py-2 text-[1rem] font-bold">老闆，今天冰箱剩什麼？汪！</div>
-              </div>
-              <div className="handdrawn-tabbar mt-6 flex gap-2 overflow-x-auto rounded-[2rem] p-2">
-                {orderedTabs.map(([key, label, emoji]) => (
-                  <button
-                    key={key}
-                    draggable
-                    onDragStart={() => setDraggingTab(key)}
-                    onDragEnd={() => setDraggingTab(null)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={() => handleTabDrop(key)}
-                    onClick={() => setActiveTab(key)}
-                    className={`handdrawn-tab shrink-0 rounded-full px-4 py-3 text-sm font-black transition ${activeTab === key ? "handdrawn-tab-active text-white" : "handdrawn-tab-idle"}`}
-                  >
-                    <span className="inline-flex items-center gap-1.5">
-                      <GripVertical className="h-3.5 w-3.5 opacity-70" />
-                      <span>{emoji}</span>
-                      <span>{label}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <div className="handdrawn-panel mt-4 rounded-[2rem] p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-black tracking-[0.22em] text-[#a06a39]">INGREDIENT DRAWER</p>
-                    <h2 className="mt-1 text-lg font-black text-[#5c3a21]">{current[1]}</h2>
-                  </div>
-                  <div className="handdrawn-badge rounded-full px-3 py-1 text-xs font-bold">已選 {selected.length} 項</div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {currentItems.map((item) => {
-                    const on = selected.includes(item);
-                    return (
-                      <button
-                        key={item}
-                        onClick={() => toggle(item)}
-                        className={`group relative overflow-hidden rounded-[1.55rem] border-2 border-dashed px-4 py-4 text-left transition ${on ? "border-[#bb7540] bg-[linear-gradient(180deg,#8b5430,#6d3f1f)] text-white shadow-[0_16px_28px_rgba(108,63,29,0.24)]" : "border-[#d8b48b] bg-[linear-gradient(180deg,#fffdf8,#fff2de)] text-[#6b4024] shadow-[0_10px_18px_rgba(129,82,42,0.08)]"}`}
-                      >
-                        <div className={`absolute inset-0 opacity-90 ${on ? "bg-[radial-gradient(circle_at_top_right,rgba(255,223,170,0.22),transparent_42%)]" : "bg-[radial-gradient(circle_at_top_right,rgba(255,228,176,0.40),transparent_42%)]"}`} />
-                        <div className="absolute -right-2 -top-2 h-9 w-9 rounded-full bg-[#fff6e6]/80 blur-md" />
-                        <div className="relative flex items-start gap-3">
-                          <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.1rem] border-2 border-dashed text-[1.35rem] rotate-[-4deg] ${on ? "border-white/35 bg-white/14" : "border-[#e7c39d] bg-[#fff7e8]"}`}>{<IngredientSketch item={item} active={on} />}</span>
-                          <div className="min-w-0">
-                            <div className="text-[15px] font-black tracking-[0.02em]">{item}</div>
-                            <div className={`mt-1 text-[11px] font-bold ${on ? "text-[#ffe6bf]" : "text-[#b07a48]"}`}>{on ? "阿柴已收到這份食材" : "手繪食材小卡"}</div>
-                            <div className="mt-2 flex items-center gap-2">
-                              <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${on ? "bg-white/12 text-[#fff4df]" : "bg-[#f8e4bf] text-[#8d5a2e]"}`}>{on ? "✓ 已選" : "+ 點選加入"}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="sketch-card mt-5 p-4">
-                <div className="mb-3 text-sm font-black tracking-[0.14em] text-[#7c4c2b]">今日備料籃</div>
-                {selected.length ? <div className="flex flex-wrap gap-2">{selected.map((item) => <span key={item} className="rounded-full bg-[#f3dfbe] px-3 py-1 text-sm font-bold">{item}</span>)}</div> : <p className="text-sm leading-7 text-[#926844]">先挑幾樣冰箱現有食材吧，阿柴才知道今晚該端什麼下酒菜汪！</p>}
-              </div>
-            </div>
-            <div className="fixed bottom-6 left-1/2 z-20 w-[calc(100%-2rem)] max-w-[398px] -translate-x-1/2 px-2 rotate-[-0.6deg]">
-              <button onClick={start} className="handdrawn-button flex w-full items-center gap-3 rounded-[2rem] px-5 py-5 text-white">
-                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/14"><Soup className="h-6 w-6" /></span>
-                <span className="flex-1 text-center text-[1.28rem] font-black">大將，今晚吃什麼？</span>
-                <span className="rounded-2xl border border-white/20 bg-[#6b2f08]/28 px-3 py-1 text-sm font-black">{selected.length}</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {screen === "cooking" && (
-          <div className="relative min-h-screen overflow-hidden px-6 py-8 text-center">
-            <div className="grain-overlay" />
-            <button onClick={() => setScreen("home")} className="handdrawn-badge relative z-10 mb-8 rounded-full px-4 py-2 text-sm font-bold">← 返回上一頁</button>
-            <div className="relative z-10 flex min-h-[78vh] flex-col items-center justify-center">
-              <div className="relative mb-7 flex h-62 w-62 items-center justify-center rounded-full border border-[#f3d3a0] bg-[radial-gradient(circle_at_50%_35%,rgba(255,250,239,0.98),rgba(247,222,170,0.92)_60%,rgba(209,140,74,0.20)_100%)] shadow-[0_22px_55px_rgba(163,103,47,0.22)]">
-                <CookingMiniAnimation selected={selected} mode={cookingMode} />
-                <div className="pan" />
-                <div className="steam steam-1" /><div className="steam steam-2" /><div className="steam steam-3" />
-                <div className="relative z-10 h-40 w-40 overflow-hidden rounded-full border-[6px] border-[#fff2d9]"><img src={mascotImage} alt="炒菜中的阿柴大將" className="h-full w-full object-cover" /></div>
-                <div className="absolute right-7 top-22 z-20 animate-bob"><ChefHat className="h-9 w-9 text-[#72401f]" /></div>
-              </div>
-              <h2 className="font-serif-jp text-[1.9rem] font-black tracking-[0.08em]">阿柴料理研發中</h2>
-              <p className="mt-4 max-w-[280px] text-base leading-8 text-[#764a2b]">大將正在瘋狂研發私房菜，請幫阿柴加油打氣汪...</p>
-              <p className="mt-3 text-sm font-bold text-[#a86a39]">{statusText}</p>
-              <div className="mt-5 flex flex-wrap justify-center gap-2">
-                {([
-                  ["stir", "翻炒"],
-                  ["boil", "煮滾"],
-                  ["grill", "烤香"],
-                ] as [CookingMode, string][]).map(([mode, label]) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setCookingMode(mode)}
-                    className={`rounded-full px-4 py-2 text-sm font-black transition ${cookingMode === mode ? "handdrawn-button text-white" : "handdrawn-badge text-[#74452a]"}`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <div className="mt-4 text-xs font-bold tracking-[0.12em] text-[#9e6b3d]">料理中模式可切換：翻炒、煮滾、烤香</div>
-              <div className="mt-8 flex flex-wrap justify-center gap-2">{selected.map((item) => <span key={item} className="rounded-full bg-[#fff2d8] px-3 py-1 text-sm font-bold">{item}</span>)}</div>
-            </div>
-            {showAd && <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#2f1507]/55 p-5"><div className="handdrawn-paper w-full max-w-[320px] rounded-[2rem] p-5 text-left"><div className="mb-3 flex items-center justify-between"><p className="text-xs font-black tracking-[0.22em] text-[#a06530]">ADMOB INTERSTITIAL</p><button disabled={!canCloseAd} onClick={closeAd} className={`rounded-full border px-3 py-1 text-xs font-black ${canCloseAd ? "border-[#a66127] bg-[#6a3b1c] text-white" : "border-[#d6b48b] bg-white/70 text-[#9a734e]"}`}>{canCloseAd ? "關閉" : "播放中"}</button></div><div className="sketch-card p-4"><p className="text-lg font-black">阿柴深夜食堂限定券</p><p className="mt-2 text-sm leading-6 text-[#815234]">這裡是 AdMob 插頁廣告佔位示意；上線時可替換成真正的 Interstitial SDK 觸發點。</p><div className="handdrawn-wood mt-4 rounded-[1.2rem] p-4 text-white"><p className="text-sm font-black tracking-[0.14em]">BUY 1 GET SNACK</p><p className="mt-3 text-xl font-black">看完阿柴，今晚再加一道串燒！</p></div></div></div></div>}
-          </div>
-        )}
-
-        {screen === "menu" && recipe && (
-          <div className="relative min-h-screen overflow-hidden px-5 py-5">
-            <div className="grain-overlay" />
-            <div className="relative z-10 mb-4 flex items-center justify-between"><div><p className="text-xs font-black tracking-[0.22em] text-[#9d6634]">CHEF RECIPE RESULT</p><h2 className="mt-1 font-serif-jp text-[1.8rem] font-black">阿柴私房菜單</h2></div><div className="handdrawn-badge rounded-full px-3 py-1 text-xs font-black">{selected.length} 項食材</div></div>
-            <div className="handdrawn-wood relative z-10 max-h-[calc(100vh-9rem)] overflow-y-auto rounded-[2rem] p-[2px]">
-              <div className="handdrawn-paper wood-card max-h-[calc(100vh-9rem)] overflow-y-auto rounded-[2rem] p-5">
-                <div className="grid gap-4">
-                  <DishIllustration recipe={recipe} selected={selected} />
-                  <div className="sketch-card p-4"><div className="label-row">菜名</div><div className="mt-2 text-2xl font-black text-[#5f3219]">{recipe.dishName}</div></div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="sketch-card p-4"><div className="label-row"><Timer className="h-4 w-4" /> 烹飪時間</div><div className="mt-2 text-lg font-black">{recipe.cookingTime}</div></div>
-                    <div className="sketch-card p-4"><div className="label-row">🍳 難易度</div><p className="mt-2 text-sm leading-7 font-bold text-[#74452a]">步驟 {recipe.cookingSteps.length} 道 · 適合中級料理人</p></div>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="sketch-card p-4"><div className="label-row">本次使用食材</div><div className="mt-3 flex flex-wrap gap-2">{recipe.ingredientsUsed.map((item) => <span key={item} className="rounded-full bg-[#f3dfbe] px-3 py-1 text-sm font-bold text-[#74452a]">{item}</span>)}</div></div>
-                    <div className="sketch-card p-4"><div className="label-row">調味重點</div><div className="mt-3 space-y-2">{recipe.seasoningNotes.map((note, i) => <div key={i} className="rounded-2xl bg-[#fff8ee] px-3 py-2 text-sm font-bold text-[#74452a]">{note}</div>)}</div></div>
-                  </div>
-                  {/* 小秘訣專區 */}
-                  <div className="rounded-[1.5rem] border border-[#d8b486] bg-white/55 p-4">
-                    <div className="label-row">💡 小柴子的料理小秘訣</div>
-                    <div className="mt-4 flex flex-col gap-3">
-                      <div className="sketch-card flex gap-3 p-4">
-                        <span className="mt-0.5 text-xl">🐶</span>
-                        <div>
-                          <div className="mb-1 text-sm font-black text-[#8b5430]">大將的話</div>
-                          <p className="text-sm leading-7 text-[#6f4125]">{recipe.shibaTalk}</p>
-                        </div>
-                      </div>
-                      {recipe.platingNotes && (
-                        <div className="sketch-card flex gap-3 p-4">
-                          <span className="mt-0.5 text-xl">🍽️</span>
-                          <div>
-                            <div className="mb-1 text-sm font-black text-[#8b5430]">擺盤小技巧</div>
-                            <p className="text-sm leading-7 text-[#6f4125]">{recipe.platingNotes}</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="rounded-[1.5rem] border border-[#d8b486] bg-white/55 p-4"><div className="flex items-center justify-between"><div className="label-row">料理步驟</div><button onClick={() => setCookingStep(0)} className="rounded-full bg-[#8b5430] px-4 py-2 text-xs font-black text-white shadow-[0_4px_10px_rgba(139,84,48,0.3)] hover:bg-[#6d3f1f] transition-all active:scale-95">👨‍🍳 開始料理</button></div><div className="mt-4 space-y-4">{recipe.cookingSteps.map((step, i) => <div key={i} className="sketch-card p-4"><div className="mb-2 flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#8b5430] text-xs font-black text-white">{(i + 1).toString().padStart(2, "0")}</span><span className="text-sm font-black tracking-[0.12em] text-[#ac6d35]">步驟 {i + 1}</span></div><p className="text-sm leading-7 text-[#6f4125]">{step}</p></div>)}</div></div>
-                  {/* 相似食譜推薦 */}
-                  {(() => {
-                    const similar = findSimilarRecipes(recipe, 3);
-                    if (similar.length === 0) return null;
-                    return (
-                      <div className="rounded-[1.5rem] border border-[#d8b486] bg-white/55 p-4">
-                        <div className="label-row">🍽️ 相似食譜推薦</div>
-                        <div className="mt-4 flex flex-col gap-3">
-                          {similar.map((sr) => (
-                            <button key={sr.dishName} onClick={() => setRecipe(sr)} className="sketch-card flex items-center gap-3 p-3 text-left transition hover:bg-[#fff2de] active:scale-[0.98]">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f3dfbe] text-base">🍳</div>
-                              <div className="min-w-0 flex-1">
-                                <div className="text-sm font-black text-[#5f3219]">{sr.dishName}</div>
-                                <div className="mt-0.5 text-[11px] font-bold text-[#a06a39]">{sr.cookingTime} · 共享 {scoreRecipe(sr, recipe.ingredientsUsed)} 種食材</div>
-                              </div>
-                              <span className="text-lg">→</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-            </div>
-            <div className="relative z-10 mt-5 flex gap-3">
-              <button onClick={saveFav} className="handdrawn-button flex flex-1 items-center justify-center gap-3 rounded-[1.7rem] px-5 py-4 text-base font-black text-white"><span className="text-lg">❤️</span> 收藏食譜</button>
-              <button onClick={shareRecipe} disabled={sharing} className="handdrawn-button flex flex-1 items-center justify-center gap-3 rounded-[1.7rem] px-5 py-4 text-base font-black text-white"><Share2 className="h-5 w-5" /> {sharing ? "分享中..." : "分享食譜"}</button>
-              <button onClick={resetAll} className="handdrawn-button flex flex-1 items-center justify-center gap-3 rounded-[1.7rem] px-5 py-4 text-base font-black text-white"><RefreshCcw className="h-5 w-5" /> 返回廚房</button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {settingsOpen && <div className="fixed inset-0 z-50 flex items-end bg-[#2f1507]/50 p-4"><div className="handdrawn-paper mx-auto w-full max-w-[430px] rounded-[2rem] p-5"><div className="mb-4 flex items-start justify-between"><div><p className="text-xs font-black tracking-[0.22em] text-[#a06a39]">AI CONNECTOR</p><h3 className="mt-1 text-xl font-black">API 設定</h3><p className="mt-1 text-sm leading-6 text-[#896141]">可選 OpenAI 或 Gemini。沒填金鑰時，會走內建示範食譜。</p></div><button onClick={() => setSettingsOpen(false)} className="rounded-full border border-[#dcb890] p-2"><X className="h-4 w-4" /></button></div><div className="mb-4 grid grid-cols-2 gap-3">{(["openai", "gemini"] as Provider[]).map((p) => <button key={p} onClick={() => setProvider(p)} className={`rounded-[1.2rem] border px-4 py-3 text-left font-bold ${provider === p ? "border-[#b86b2e] bg-[#6a3d1d] text-white" : "border-[#d6b48b] bg-white text-[#6f4427]"}`}>{p.toUpperCase()}</button>)}</div><label className="mb-3 block"><span className="mb-1 block text-sm font-bold">API Key</span><input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="貼上你的 API Key" className="handdrawn-badge w-full rounded-2xl bg-white px-4 py-3 text-sm outline-none" /></label><label className="block"><span className="mb-1 block text-sm font-bold">自訂 Base URL（可留空）</span><input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={provider === "openai" ? "https://api.openai.com/v1/chat/completions" : "https://generativelanguage.googleapis.com/..."} className="handdrawn-badge w-full rounded-2xl bg-white px-4 py-3 text-sm outline-none" /></label></div></div>}
-
-      {showFav && <div className="fixed inset-0 z-50 flex items-end bg-[#2f1507]/50 p-4" onClick={() => setShowFav(false)}>
-        <div className="handdrawn-paper mx-auto w-full max-w-[430px] max-h-[70vh] overflow-y-auto rounded-[2rem] p-5" onClick={e => e.stopPropagation()}>
-          <div className="mb-4 flex items-center justify-between">
-            <div><p className="text-xs font-black tracking-[0.22em] text-[#a06a39]">MY RECIPE</p><h3 className="mt-1 text-xl font-black">❤️ 我的酒單</h3></div>
-            <button onClick={() => setShowFav(false)} className="rounded-full border border-[#dcb890] p-2"><X className="h-4 w-4" /></button>
-          </div>
-          {favorites.length === 0 ? (
-            <div className="sketch-card p-6 text-center"><p className="text-sm leading-7 text-[#815234]">還沒有收藏的食譜～快去請阿柴大將做菜吧汪！</p></div>
-          ) : (
-            <div className="space-y-3">{favorites.map(f => (
-              <div key={f.id} className="sketch-card flex items-center justify-between p-4">
-                <div className="min-w-0 flex-1 cursor-pointer" onClick={() => { loadRecipe(f); setShowFav(false); }}>
-                  <div className="text-base font-black text-[#5f3219]">{f.dishName}</div>
-                  <div className="mt-1 text-xs font-bold text-[#a06a39]">{new Date(f.savedAt).toLocaleDateString("zh-TW")} · {f.cookingTime}</div>
-                </div>
-                <button onClick={() => unFav(f.id)} className="ml-2 rounded-full border border-[#dcb890] px-3 py-1 text-xs font-bold text-[#b86423]">移除</button>
-              </div>
-            ))}</div>
-          )}
-        </div>
-      </div>}
-
-      {showDiary && <div className="fixed inset-0 z-50 flex items-end bg-[#2f1507]/50 p-4" onClick={() => setShowDiary(false)}>
-        <div className="handdrawn-paper mx-auto w-full max-w-[430px] max-h-[70vh] overflow-y-auto rounded-[2rem] p-5" onClick={e => e.stopPropagation()}>
-          <div className="mb-4 flex items-center justify-between">
-            <div><p className="text-xs font-black tracking-[0.22em] text-[#a06a39]">COOKING LOG</p><h3 className="mt-1 text-xl font-black">📓 料理日記</h3></div>
-            <button onClick={() => setShowDiary(false)} className="rounded-full border border-[#dcb890] p-2"><X className="h-4 w-4" /></button>
-          </div>
-          {diary.length === 0 ? (
-            <div className="sketch-card p-6 text-center"><p className="text-sm leading-7 text-[#815234]">還沒有料理紀錄～讓阿柴大將為你煮一頓吧汪！</p></div>
-          ) : (
-            <div className="space-y-3">{diary.map(f => (
-              <div key={f.id} className="sketch-card flex items-center justify-between p-4">
-                <div className="min-w-0 flex-1 cursor-pointer" onClick={() => { loadRecipe(f); setShowDiary(false); }}>
-                  <div className="text-base font-black text-[#5f3219]">{f.dishName}</div>
-                  <div className="mt-1 text-xs font-bold text-[#a06a39]">{new Date(f.savedAt).toLocaleDateString("zh-TW")} · 食材：{f.ingredientsUsed.slice(0,4).join("、")}{f.ingredientsUsed.length > 4 ? "..." : ""}</div>
-                </div>
-              </div>
-            ))}</div>
-          )}
-        </div>
-      </div>}
-
-      {/* 👨‍🍳 步驟料理助手 */}
-      {cookingStep !== null && recipe && (
-        <div className="fixed inset-0 z-50 flex items-end bg-[#2f1507]/60 p-4">
-          <div className="handdrawn-paper mx-auto w-full max-w-[430px] max-h-[82vh] overflow-y-auto rounded-[2rem] p-6" onClick={(e) => e.stopPropagation()}>
-            {/* 進度條 */}
-            <div className="mb-5">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-black tracking-[0.12em] text-[#a06a39]">料理進行中</span>
-                <span className="text-sm font-black text-[#8b5430]">步驟 {cookingStep + 1} / {recipe.cookingSteps.length}</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-[#f3dfbe]">
-                <div className="h-full rounded-full bg-[linear-gradient(90deg,#8b5430,#c4895a)] transition-all duration-500" style={{ width: `${((cookingStep + 1) / recipe.cookingSteps.length) * 100}%` }} />
-              </div>
-            </div>
-
-            {/* 步驟標題 */}
-            <div className="mb-4 flex items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#8b5430] text-lg font-black text-white">
-                {(cookingStep + 1).toString().padStart(2, "0")}
-              </span>
-              <div>
-                <div className="text-xs font-black tracking-[0.12em] text-[#ac6d35]">STEP {cookingStep + 1}</div>
-                <div className="text-sm font-bold text-[#7a4b2b]">總共 {recipe.cookingSteps.length} 個步驟</div>
-              </div>
-            </div>
-
-            {/* 步驟內容 */}
-            <div className="sketch-card mb-6 min-h-[160px] p-5">
-              <p className="text-base leading-8 text-[#5f361d]">{recipe.cookingSteps[cookingStep]}</p>
-            </div>
-
-            {/* 導航按鈕 */}
-            <div className="flex gap-3">
-              <button
-                onClick={() => setCookingStep((prev) => (prev !== null && prev > 0 ? prev - 1 : prev))}
-                disabled={cookingStep === 0}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-[1.7rem] px-5 py-4 text-base font-black transition-all active:scale-95 ${
-                  cookingStep === 0
-                    ? "cursor-not-allowed bg-[#e8d5b8] text-[#b08a62]"
-                    : "handdrawn-badge text-[#74452a]"
-                }`}
-              >
-                ⬅ 上一步
-              </button>
-              {cookingStep < recipe.cookingSteps.length - 1 ? (
-                <button
-                  onClick={() => setCookingStep((prev) => (prev !== null ? prev + 1 : prev))}
-                  className="handdrawn-button flex flex-1 items-center justify-center gap-2 rounded-[1.7rem] px-5 py-4 text-base font-black text-white transition-all active:scale-95"
-                >
-                  下一步 ➡
-                </button>
-              ) : (
-                <button
-                  onClick={() => setCookingStep(null)}
-                  className="handdrawn-button flex flex-1 items-center justify-center gap-2 rounded-[1.7rem] px-5 py-4 text-base font-black text-white transition-all active:scale-95"
-                >
-                  ✅ 完成料理
-                </button>
-              )}
-            </div>
-
-            {/* 關閉按鈕 */}
-            <button
-              onClick={() => setCookingStep(null)}
-              className="mt-4 w-full rounded-full border border-[#dcb890] px-5 py-3 text-sm font-bold text-[#8d6139] transition-all active:scale-95"
-            >
-              關閉料理模式
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ===== 內建食譜庫（150道）=====
 export const builtinRecipes: Recipe[] = [
   // ===== 肉類為主（豬肉） =====
@@ -3737,5 +3245,497 @@ function findSimilarRecipes(recipe: Recipe, count: number = 3): Recipe[] {
     .sort((a, b) => b.score - a.score)
     .slice(0, count)
     .map((r) => r.recipe);
+}
+
+export default function Home() {
+  console.log("HOME_COMPONENT_LOADED_12345");
+  const [screen, setScreen] = useState<Screen>("home");
+  const [activeTab, setActiveTab] = useState("meat");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [recipe, setRecipe] = useState<Recipe | null>(null);
+  const [provider, setProvider] = useState<Provider>(() => (localStorage.getItem("sk-provider") as Provider) || "openai");
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("sk-key") || "");
+  const [baseUrl, setBaseUrl] = useState(() => localStorage.getItem("sk-url") || "");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [statusText, setStatusText] = useState("正在整理冰箱情報...");
+  const [showAd, setShowAd] = useState(false);
+  const [canCloseAd, setCanCloseAd] = useState(false);
+  const [cookingMode, setCookingMode] = useState<CookingMode>("stir");
+  const [cookingStep, setCookingStep] = useState<number | null>(null);
+  const [ingredientOrders, setIngredientOrders] = useState<Record<string, string[]>>(categoryOrderMap);
+  const [tabOrder, setTabOrder] = useState<string[]>(tabOrderSeed);
+  const [draggingTab, setDraggingTab] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState<SavedRecipe[]>(() => JSON.parse(localStorage.getItem("sk-fav") || "[]"));
+  const [diary, setDiary] = useState<SavedRecipe[]>(() => JSON.parse(localStorage.getItem("sk-diary") || "[]"));
+  const [showFav, setShowFav] = useState(false);
+  const [showDiary, setShowDiary] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const shareRef = useRef<HTMLDivElement>(null);
+  const current = useMemo(() => categories.find(([key]) => key === activeTab) || categories[0], [activeTab]);
+  const currentItems = ingredientOrders[activeTab] || current[3];
+  const orderedTabs = tabOrder.map((key) => categories.find(([k]) => k === key)!).filter(Boolean);
+
+  useEffect(() => localStorage.setItem("sk-provider", provider), [provider]);
+  useEffect(() => localStorage.setItem("sk-key", apiKey), [apiKey]);
+  useEffect(() => localStorage.setItem("sk-url", baseUrl), [baseUrl]);
+
+  useEffect(() => {
+    if (screen !== "cooking") return;
+    let dead = false;
+    let apiDone = false;
+    let adDone = false;
+    const goIfReady = () => { if (!dead && apiDone && adDone) setScreen("menu"); };
+    setShowAd(true);
+    setCanCloseAd(false);
+    setStatusText("大將正在起鍋爆香中...");
+    const t1 = window.setTimeout(() => setCanCloseAd(true), 1800);
+    const t2 = window.setTimeout(() => { adDone = true; setShowAd(false); goIfReady(); }, 3200);
+    fetchRecipe(provider, apiKey, baseUrl, selected).then((r) => {
+      if (dead) return;
+      setRecipe(r);
+      setStatusText("香氣差不多了，正在裝盤...");
+      apiDone = true;
+      // auto-add to diary
+      const did = Date.now().toString();
+      const dEntry: SavedRecipe = { ...r, savedAt: new Date().toISOString(), id: did };
+      setDiary(prev => {
+        const n = [dEntry, ...prev].slice(0, 30);
+        localStorage.setItem("sk-diary", JSON.stringify(n));
+        return n;
+      });
+      goIfReady();
+    }).catch(() => {
+      if (dead) return;
+      if (matchBuiltinRecipe(selected)) {
+        setRecipe(matchBuiltinRecipe(selected)!);
+        toast.success("內建食譜庫已為你找到合適料理汪！");
+        apiDone = true;
+        goIfReady();
+      } else {
+        toast.error("AI 連線失敗，先用示範食譜救場汪！");
+        setRecipe(fallbackRecipe(selected));
+        apiDone = true;
+        goIfReady();
+      }
+    });
+    return () => { dead = true; clearTimeout(t1); clearTimeout(t2); };
+  }, [screen, provider, apiKey, baseUrl, selected]);
+
+  const toggle = (item: string) => setSelected((prev) => prev.includes(item) ? prev.filter((v) => v !== item) : [...prev, item]);
+  const start = () => {
+    if (!selected.length) return toast.warning("先選幾樣食材再請大將出手吧！");
+    setRecipe(null);
+    setScreen("cooking");
+  };
+  const resetAll = () => { setSelected([]); setRecipe(null); setActiveTab("meat"); setIngredientOrders(categoryOrderMap); setTabOrder(tabOrderSeed); setScreen("home"); };
+  const handleTabDrop = (targetKey: string) => {
+    if (!draggingTab || draggingTab === targetKey) return;
+    setTabOrder((prev) => reorder(prev, draggingTab, targetKey));
+    setDraggingTab(null);
+  };
+  const closeAd = () => { if (!canCloseAd) return; setShowAd(false); setCanCloseAd(false); };
+  const isFav = (id: string) => favorites.some(f => f.id === id);
+  const saveFav = () => {
+    if (!recipe) return;
+    const id = Date.now().toString();
+    const saved: SavedRecipe = { ...recipe, savedAt: new Date().toISOString(), id };
+    const next = [saved, ...favorites].slice(0, 20);
+    setFavorites(next);
+    localStorage.setItem("sk-fav", JSON.stringify(next));
+    toast.success("❤️ 已收藏到我的酒單！");
+  };
+  const unFav = (id: string) => {
+    const next = favorites.filter(f => f.id !== id);
+    setFavorites(next);
+    localStorage.setItem("sk-fav", JSON.stringify(next));
+    toast.success("已從收藏中移除～");
+  };
+  const addDiary = () => {
+    if (!recipe) return;
+    const id = Date.now().toString();
+    const saved: SavedRecipe = { ...recipe, savedAt: new Date().toISOString(), id };
+    const next = [saved, ...diary].slice(0, 30);
+    setDiary(next);
+    localStorage.setItem("sk-diary", JSON.stringify(next));
+  };
+  const shareRecipe = async () => {
+    if (!recipe || !shareRef.current) return;
+    setSharing(true);
+    try {
+      // 開一個新視窗來生成分享圖（避免干擾主畫面）
+      const shareWin = window.open("", "_blank", "width=500,height=800");
+      if (!shareWin) { toast.error("請允許彈出視窗來分享汪！"); setSharing(false); return; }
+      shareWin.document.write(`
+        <!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8">
+        <title>阿柴食堂 - ${recipe.dishName}</title>
+        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Noto+Serif+TC:wght@700;900&display=swap" rel="stylesheet">
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: 'Noto Sans TC', sans-serif; background: #f8ead0; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+          .card { max-width: 420px; width: 100%; background: #FDF8EB; border-radius: 2.4rem; overflow: hidden; padding: 24px; box-shadow: 0 20px 40px rgba(80,40,10,0.15); }
+          h1 { font-family: 'Noto Serif TC', serif; font-size: 26px; font-weight: 900; color: #5d311b; text-align: center; }
+          .badge { display: inline-block; background: #fff3d8; border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700; color: #885c39; }
+          .section { margin-top: 16px; }
+          .section h3 { font-size: 13px; font-weight: 700; color: #ac6d35; letter-spacing: 0.12em; margin-bottom: 8px; }
+          .step { background: #fff8ee; border-radius: 14px; padding: 10px 14px; margin-bottom: 8px; font-size: 13px; line-height: 1.8; color: #6f4125; }
+          .ing { display: inline-block; background: #f3dfbe; border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 700; color: #74452a; margin: 2px; }
+          .footer { text-align: center; margin-top: 20px; padding-top: 16px; border-top: 2px dashed #d8b486; font-size: 13px; font-weight: 700; color: #885c39; }
+          .time { text-align: center; font-size: 15px; font-weight: 900; color: #5f3219; margin-top: 8px; }
+          .shiba { text-align: center; font-size: 14px; line-height: 1.8; color: #74452a; margin-top: 8px; font-weight: 700; padding: 10px; background: #fff3d8; border-radius: 14px; }
+        </style></head><body>
+        <div class="card">
+          <div class="badge" style="text-align:center;display:block;width:fit-content;margin:0 auto;">🏮 IZAKAYA MODE</div>
+          <h1 style="margin-top:12px;">${recipe.dishName}</h1>
+          <div class="time">⏱ ${recipe.cookingTime}</div>
+          <div class="shiba">${recipe.shibaTalk}</div>
+          <div class="section">
+            <h3>🥘 食材</h3>
+            ${recipe.ingredientsUsed.map(i => `<span class="ing">${i}</span>`).join("")}
+          </div>
+          <div class="section">
+            <h3>🧂 調味重點</h3>
+            ${recipe.seasoningNotes.map(n => `<div class="step">${n}</div>`).join("")}
+          </div>
+          <div class="section">
+            <h3>📋 料理步驟</h3>
+            ${recipe.cookingSteps.map((s, i) => `<div class="step"><strong>Step ${i+1}</strong> ${s}</div>`).join("")}
+          </div>
+          <div class="footer">🐾 阿柴食堂 · Shiba Kitchen 🐾</div>
+        </div></body></html>
+      `);
+      shareWin.document.close();
+      toast.success("📸 食譜已開新分頁！可截圖分享或列印汪！");
+    } catch (e) {
+      toast.error("分享失敗汪～請截圖手動分享！");
+    }
+    setSharing(false);
+  };
+  const loadRecipe = (r: SavedRecipe) => {
+    setRecipe(r);
+    setSelected(r.ingredientsUsed);
+    setScreen("menu");
+  };
+
+  return (
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f8ead0_0%,#fdf8eb_28%,#f7ead3_100%)] p-4 text-[#5f361d]">
+      <div className="handdrawn-paper mx-auto max-w-[430px] overflow-hidden rounded-[2.4rem] bg-[#FDF8EB]">
+        {screen === "home" && (
+          <div className="relative min-h-screen overflow-hidden pb-32">
+            <div className="grain-overlay" />
+            <div className="px-5 pt-5">
+              <div className="mb-4 flex items-center justify-between">
+                <div className="rounded-full border border-[#e4caa0] bg-white/65 px-4 py-2 text-[11px] font-black tracking-[0.28em] text-[#885c39]">IZAKAYA MODE</div>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowFav(true)} className="flex h-11 w-11 items-center justify-center rounded-full border border-[#d4b48c] bg-white/70 text-[#b86423]"><span className="text-lg">❤️</span></button>
+                  <button onClick={() => setShowDiary(true)} className="flex h-11 w-11 items-center justify-center rounded-full border border-[#d4b48c] bg-white/70 text-[#b86423]"><span className="text-lg">📓</span></button>
+                  <button onClick={() => setSettingsOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-full border border-[#d4b48c] bg-white/70"><Settings2 className="h-5 w-5" /></button>
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="scribble-circle mx-auto mb-5 h-42 w-42 overflow-hidden rounded-full bg-[#fff8ea]">
+                  <img src={mascotImage} alt="阿柴主廚插圖" className="h-full w-full object-cover" />
+                </div>
+                <h1 className="font-serif-jp text-[2.2rem] font-black tracking-[0.12em] text-[#5d311b]">阿柴食堂</h1>
+                <div className="handdrawn-badge mx-auto mt-3 inline-flex rounded-full px-5 py-2 text-[1rem] font-bold">老闆，今天冰箱剩什麼？汪！</div>
+              </div>
+              <div className="handdrawn-tabbar mt-6 flex gap-2 overflow-x-auto rounded-[2rem] p-2">
+                {orderedTabs.map(([key, label, emoji]) => (
+                  <button
+                    key={key}
+                    draggable
+                    onDragStart={() => setDraggingTab(key)}
+                    onDragEnd={() => setDraggingTab(null)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => handleTabDrop(key)}
+                    onClick={() => setActiveTab(key)}
+                    className={`handdrawn-tab shrink-0 rounded-full px-4 py-3 text-sm font-black transition ${activeTab === key ? "handdrawn-tab-active text-white" : "handdrawn-tab-idle"}`}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <GripVertical className="h-3.5 w-3.5 opacity-70" />
+                      <span>{emoji}</span>
+                      <span>{label}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="handdrawn-panel mt-4 rounded-[2rem] p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-black tracking-[0.22em] text-[#a06a39]">INGREDIENT DRAWER</p>
+                    <h2 className="mt-1 text-lg font-black text-[#5c3a21]">{current[1]}</h2>
+                  </div>
+                  <div className="handdrawn-badge rounded-full px-3 py-1 text-xs font-bold">已選 {selected.length} 項</div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {currentItems.map((item) => {
+                    const on = selected.includes(item);
+                    return (
+                      <button
+                        key={item}
+                        onClick={() => toggle(item)}
+                        className={`group relative overflow-hidden rounded-[1.55rem] border-2 border-dashed px-4 py-4 text-left transition ${on ? "border-[#bb7540] bg-[linear-gradient(180deg,#8b5430,#6d3f1f)] text-white shadow-[0_16px_28px_rgba(108,63,29,0.24)]" : "border-[#d8b48b] bg-[linear-gradient(180deg,#fffdf8,#fff2de)] text-[#6b4024] shadow-[0_10px_18px_rgba(129,82,42,0.08)]"}`}
+                      >
+                        <div className={`absolute inset-0 opacity-90 ${on ? "bg-[radial-gradient(circle_at_top_right,rgba(255,223,170,0.22),transparent_42%)]" : "bg-[radial-gradient(circle_at_top_right,rgba(255,228,176,0.40),transparent_42%)]"}`} />
+                        <div className="absolute -right-2 -top-2 h-9 w-9 rounded-full bg-[#fff6e6]/80 blur-md" />
+                        <div className="relative flex items-start gap-3">
+                          <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.1rem] border-2 border-dashed text-[1.35rem] rotate-[-4deg] ${on ? "border-white/35 bg-white/14" : "border-[#e7c39d] bg-[#fff7e8]"}`}>{<IngredientSketch item={item} active={on} />}</span>
+                          <div className="min-w-0">
+                            <div className="text-[15px] font-black tracking-[0.02em]">{item}</div>
+                            <div className={`mt-1 text-[11px] font-bold ${on ? "text-[#ffe6bf]" : "text-[#b07a48]"}`}>{on ? "阿柴已收到這份食材" : "手繪食材小卡"}</div>
+                            <div className="mt-2 flex items-center gap-2">
+                              <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${on ? "bg-white/12 text-[#fff4df]" : "bg-[#f8e4bf] text-[#8d5a2e]"}`}>{on ? "✓ 已選" : "+ 點選加入"}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="sketch-card mt-5 p-4">
+                <div className="mb-3 text-sm font-black tracking-[0.14em] text-[#7c4c2b]">今日備料籃</div>
+                {selected.length ? <div className="flex flex-wrap gap-2">{selected.map((item) => <span key={item} className="rounded-full bg-[#f3dfbe] px-3 py-1 text-sm font-bold">{item}</span>)}</div> : <p className="text-sm leading-7 text-[#926844]">先挑幾樣冰箱現有食材吧，阿柴才知道今晚該端什麼下酒菜汪！</p>}
+              </div>
+            </div>
+            <div className="fixed bottom-6 left-1/2 z-20 w-[calc(100%-2rem)] max-w-[398px] -translate-x-1/2 px-2 rotate-[-0.6deg]">
+              <button onClick={start} className="handdrawn-button flex w-full items-center gap-3 rounded-[2rem] px-5 py-5 text-white">
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/14"><Soup className="h-6 w-6" /></span>
+                <span className="flex-1 text-center text-[1.28rem] font-black">大將，今晚吃什麼？</span>
+                <span className="rounded-2xl border border-white/20 bg-[#6b2f08]/28 px-3 py-1 text-sm font-black">{selected.length}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {screen === "cooking" && (
+          <div className="relative min-h-screen overflow-hidden px-6 py-8 text-center">
+            <div className="grain-overlay" />
+            <button onClick={() => setScreen("home")} className="handdrawn-badge relative z-10 mb-8 rounded-full px-4 py-2 text-sm font-bold">← 返回上一頁</button>
+            <div className="relative z-10 flex min-h-[78vh] flex-col items-center justify-center">
+              <div className="relative mb-7 flex h-62 w-62 items-center justify-center rounded-full border border-[#f3d3a0] bg-[radial-gradient(circle_at_50%_35%,rgba(255,250,239,0.98),rgba(247,222,170,0.92)_60%,rgba(209,140,74,0.20)_100%)] shadow-[0_22px_55px_rgba(163,103,47,0.22)]">
+                <CookingMiniAnimation selected={selected} mode={cookingMode} />
+                <div className="pan" />
+                <div className="steam steam-1" /><div className="steam steam-2" /><div className="steam steam-3" />
+                <div className="relative z-10 h-40 w-40 overflow-hidden rounded-full border-[6px] border-[#fff2d9]"><img src={mascotImage} alt="炒菜中的阿柴大將" className="h-full w-full object-cover" /></div>
+                <div className="absolute right-7 top-22 z-20 animate-bob"><ChefHat className="h-9 w-9 text-[#72401f]" /></div>
+              </div>
+              <h2 className="font-serif-jp text-[1.9rem] font-black tracking-[0.08em]">阿柴料理研發中</h2>
+              <p className="mt-4 max-w-[280px] text-base leading-8 text-[#764a2b]">大將正在瘋狂研發私房菜，請幫阿柴加油打氣汪...</p>
+              <p className="mt-3 text-sm font-bold text-[#a86a39]">{statusText}</p>
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                {([
+                  ["stir", "翻炒"],
+                  ["boil", "煮滾"],
+                  ["grill", "烤香"],
+                ] as [CookingMode, string][]).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setCookingMode(mode)}
+                    className={`rounded-full px-4 py-2 text-sm font-black transition ${cookingMode === mode ? "handdrawn-button text-white" : "handdrawn-badge text-[#74452a]"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-4 text-xs font-bold tracking-[0.12em] text-[#9e6b3d]">料理中模式可切換：翻炒、煮滾、烤香</div>
+              <div className="mt-8 flex flex-wrap justify-center gap-2">{selected.map((item) => <span key={item} className="rounded-full bg-[#fff2d8] px-3 py-1 text-sm font-bold">{item}</span>)}</div>
+            </div>
+            {showAd && <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#2f1507]/55 p-5"><div className="handdrawn-paper w-full max-w-[320px] rounded-[2rem] p-5 text-left"><div className="mb-3 flex items-center justify-between"><p className="text-xs font-black tracking-[0.22em] text-[#a06530]">ADMOB INTERSTITIAL</p><button disabled={!canCloseAd} onClick={closeAd} className={`rounded-full border px-3 py-1 text-xs font-black ${canCloseAd ? "border-[#a66127] bg-[#6a3b1c] text-white" : "border-[#d6b48b] bg-white/70 text-[#9a734e]"}`}>{canCloseAd ? "關閉" : "播放中"}</button></div><div className="sketch-card p-4"><p className="text-lg font-black">阿柴深夜食堂限定券</p><p className="mt-2 text-sm leading-6 text-[#815234]">這裡是 AdMob 插頁廣告佔位示意；上線時可替換成真正的 Interstitial SDK 觸發點。</p><div className="handdrawn-wood mt-4 rounded-[1.2rem] p-4 text-white"><p className="text-sm font-black tracking-[0.14em]">BUY 1 GET SNACK</p><p className="mt-3 text-xl font-black">看完阿柴，今晚再加一道串燒！</p></div></div></div></div>}
+          </div>
+        )}
+
+        {screen === "menu" && recipe && (
+          <div className="relative min-h-screen overflow-hidden px-5 py-5">
+            <div className="grain-overlay" />
+            <div className="relative z-10 mb-4 flex items-center justify-between"><div><p className="text-xs font-black tracking-[0.22em] text-[#9d6634]">CHEF RECIPE RESULT</p><h2 className="mt-1 font-serif-jp text-[1.8rem] font-black">阿柴私房菜單</h2></div><div className="handdrawn-badge rounded-full px-3 py-1 text-xs font-black">{selected.length} 項食材</div></div>
+            <div className="handdrawn-wood relative z-10 max-h-[calc(100vh-9rem)] overflow-y-auto rounded-[2rem] p-[2px]">
+              <div className="handdrawn-paper wood-card max-h-[calc(100vh-9rem)] overflow-y-auto rounded-[2rem] p-5">
+                <div className="grid gap-4">
+                  <DishIllustration recipe={recipe} selected={selected} />
+                  <div className="sketch-card p-4"><div className="label-row">菜名</div><div className="mt-2 text-2xl font-black text-[#5f3219]">{recipe.dishName}</div></div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="sketch-card p-4"><div className="label-row"><Timer className="h-4 w-4" /> 烹飪時間</div><div className="mt-2 text-lg font-black">{recipe.cookingTime}</div></div>
+                    <div className="sketch-card p-4"><div className="label-row">🍳 難易度</div><p className="mt-2 text-sm leading-7 font-bold text-[#74452a]">步驟 {recipe.cookingSteps.length} 道 · 適合中級料理人</p></div>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="sketch-card p-4"><div className="label-row">本次使用食材</div><div className="mt-3 flex flex-wrap gap-2">{recipe.ingredientsUsed.map((item) => <span key={item} className="rounded-full bg-[#f3dfbe] px-3 py-1 text-sm font-bold text-[#74452a]">{item}</span>)}</div></div>
+                    <div className="sketch-card p-4"><div className="label-row">調味重點</div><div className="mt-3 space-y-2">{recipe.seasoningNotes.map((note, i) => <div key={i} className="rounded-2xl bg-[#fff8ee] px-3 py-2 text-sm font-bold text-[#74452a]">{note}</div>)}</div></div>
+                  </div>
+                  {/* 小秘訣專區 */}
+                  <div className="rounded-[1.5rem] border border-[#d8b486] bg-white/55 p-4">
+                    <div className="label-row">💡 小柴子的料理小秘訣</div>
+                    <div className="mt-4 flex flex-col gap-3">
+                      <div className="sketch-card flex gap-3 p-4">
+                        <span className="mt-0.5 text-xl">🐶</span>
+                        <div>
+                          <div className="mb-1 text-sm font-black text-[#8b5430]">大將的話</div>
+                          <p className="text-sm leading-7 text-[#6f4125]">{recipe.shibaTalk}</p>
+                        </div>
+                      </div>
+                      {recipe.platingNotes && (
+                        <div className="sketch-card flex gap-3 p-4">
+                          <span className="mt-0.5 text-xl">🍽️</span>
+                          <div>
+                            <div className="mb-1 text-sm font-black text-[#8b5430]">擺盤小技巧</div>
+                            <p className="text-sm leading-7 text-[#6f4125]">{recipe.platingNotes}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="rounded-[1.5rem] border border-[#d8b486] bg-white/55 p-4"><div className="flex items-center justify-between"><div className="label-row">料理步驟</div><button onClick={() => setCookingStep(0)} className="rounded-full bg-[#8b5430] px-4 py-2 text-xs font-black text-white shadow-[0_4px_10px_rgba(139,84,48,0.3)] hover:bg-[#6d3f1f] transition-all active:scale-95">👨‍🍳 開始料理</button></div><div className="mt-4 space-y-4">{recipe.cookingSteps.map((step, i) => <div key={i} className="sketch-card p-4"><div className="mb-2 flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#8b5430] text-xs font-black text-white">{(i + 1).toString().padStart(2, "0")}</span><span className="text-sm font-black tracking-[0.12em] text-[#ac6d35]">步驟 {i + 1}</span></div><p className="text-sm leading-7 text-[#6f4125]">{step}</p></div>)}</div></div>
+                  {/* 相似食譜推薦 */}
+                  {(() => {
+                    const similar = findSimilarRecipes(recipe, 3);
+                    if (similar.length === 0) return null;
+                    return (
+                      <div className="rounded-[1.5rem] border border-[#d8b486] bg-white/55 p-4">
+                        <div className="label-row">🍽️ 相似食譜推薦</div>
+                        <div className="mt-4 flex flex-col gap-3">
+                          {similar.map((sr) => (
+                            <button key={sr.dishName} onClick={() => setRecipe(sr)} className="sketch-card flex items-center gap-3 p-3 text-left transition hover:bg-[#fff2de] active:scale-[0.98]">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f3dfbe] text-base">🍳</div>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-black text-[#5f3219]">{sr.dishName}</div>
+                                <div className="mt-0.5 text-[11px] font-bold text-[#a06a39]">{sr.cookingTime} · 共享 {scoreRecipe(sr, recipe.ingredientsUsed)} 種食材</div>
+                              </div>
+                              <span className="text-lg">→</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+            <div className="relative z-10 mt-5 flex gap-3">
+              <button onClick={saveFav} className="handdrawn-button flex flex-1 items-center justify-center gap-3 rounded-[1.7rem] px-5 py-4 text-base font-black text-white"><span className="text-lg">❤️</span> 收藏食譜</button>
+              <button onClick={shareRecipe} disabled={sharing} className="handdrawn-button flex flex-1 items-center justify-center gap-3 rounded-[1.7rem] px-5 py-4 text-base font-black text-white"><Share2 className="h-5 w-5" /> {sharing ? "分享中..." : "分享食譜"}</button>
+              <button onClick={resetAll} className="handdrawn-button flex flex-1 items-center justify-center gap-3 rounded-[1.7rem] px-5 py-4 text-base font-black text-white"><RefreshCcw className="h-5 w-5" /> 返回廚房</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {settingsOpen && <div className="fixed inset-0 z-50 flex items-end bg-[#2f1507]/50 p-4"><div className="handdrawn-paper mx-auto w-full max-w-[430px] rounded-[2rem] p-5"><div className="mb-4 flex items-start justify-between"><div><p className="text-xs font-black tracking-[0.22em] text-[#a06a39]">AI CONNECTOR</p><h3 className="mt-1 text-xl font-black">API 設定</h3><p className="mt-1 text-sm leading-6 text-[#896141]">可選 OpenAI 或 Gemini。沒填金鑰時，會走內建示範食譜。</p></div><button onClick={() => setSettingsOpen(false)} className="rounded-full border border-[#dcb890] p-2"><X className="h-4 w-4" /></button></div><div className="mb-4 grid grid-cols-2 gap-3">{(["openai", "gemini"] as Provider[]).map((p) => <button key={p} onClick={() => setProvider(p)} className={`rounded-[1.2rem] border px-4 py-3 text-left font-bold ${provider === p ? "border-[#b86b2e] bg-[#6a3d1d] text-white" : "border-[#d6b48b] bg-white text-[#6f4427]"}`}>{p.toUpperCase()}</button>)}</div><label className="mb-3 block"><span className="mb-1 block text-sm font-bold">API Key</span><input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="貼上你的 API Key" className="handdrawn-badge w-full rounded-2xl bg-white px-4 py-3 text-sm outline-none" /></label><label className="block"><span className="mb-1 block text-sm font-bold">自訂 Base URL（可留空）</span><input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={provider === "openai" ? "https://api.openai.com/v1/chat/completions" : "https://generativelanguage.googleapis.com/..."} className="handdrawn-badge w-full rounded-2xl bg-white px-4 py-3 text-sm outline-none" /></label></div></div>}
+
+      {showFav && <div className="fixed inset-0 z-50 flex items-end bg-[#2f1507]/50 p-4" onClick={() => setShowFav(false)}>
+        <div className="handdrawn-paper mx-auto w-full max-w-[430px] max-h-[70vh] overflow-y-auto rounded-[2rem] p-5" onClick={e => e.stopPropagation()}>
+          <div className="mb-4 flex items-center justify-between">
+            <div><p className="text-xs font-black tracking-[0.22em] text-[#a06a39]">MY RECIPE</p><h3 className="mt-1 text-xl font-black">❤️ 我的酒單</h3></div>
+            <button onClick={() => setShowFav(false)} className="rounded-full border border-[#dcb890] p-2"><X className="h-4 w-4" /></button>
+          </div>
+          {favorites.length === 0 ? (
+            <div className="sketch-card p-6 text-center"><p className="text-sm leading-7 text-[#815234]">還沒有收藏的食譜～快去請阿柴大將做菜吧汪！</p></div>
+          ) : (
+            <div className="space-y-3">{favorites.map(f => (
+              <div key={f.id} className="sketch-card flex items-center justify-between p-4">
+                <div className="min-w-0 flex-1 cursor-pointer" onClick={() => { loadRecipe(f); setShowFav(false); }}>
+                  <div className="text-base font-black text-[#5f3219]">{f.dishName}</div>
+                  <div className="mt-1 text-xs font-bold text-[#a06a39]">{new Date(f.savedAt).toLocaleDateString("zh-TW")} · {f.cookingTime}</div>
+                </div>
+                <button onClick={() => unFav(f.id)} className="ml-2 rounded-full border border-[#dcb890] px-3 py-1 text-xs font-bold text-[#b86423]">移除</button>
+              </div>
+            ))}</div>
+          )}
+        </div>
+      </div>}
+
+      {showDiary && <div className="fixed inset-0 z-50 flex items-end bg-[#2f1507]/50 p-4" onClick={() => setShowDiary(false)}>
+        <div className="handdrawn-paper mx-auto w-full max-w-[430px] max-h-[70vh] overflow-y-auto rounded-[2rem] p-5" onClick={e => e.stopPropagation()}>
+          <div className="mb-4 flex items-center justify-between">
+            <div><p className="text-xs font-black tracking-[0.22em] text-[#a06a39]">COOKING LOG</p><h3 className="mt-1 text-xl font-black">📓 料理日記</h3></div>
+            <button onClick={() => setShowDiary(false)} className="rounded-full border border-[#dcb890] p-2"><X className="h-4 w-4" /></button>
+          </div>
+          {diary.length === 0 ? (
+            <div className="sketch-card p-6 text-center"><p className="text-sm leading-7 text-[#815234]">還沒有料理紀錄～讓阿柴大將為你煮一頓吧汪！</p></div>
+          ) : (
+            <div className="space-y-3">{diary.map(f => (
+              <div key={f.id} className="sketch-card flex items-center justify-between p-4">
+                <div className="min-w-0 flex-1 cursor-pointer" onClick={() => { loadRecipe(f); setShowDiary(false); }}>
+                  <div className="text-base font-black text-[#5f3219]">{f.dishName}</div>
+                  <div className="mt-1 text-xs font-bold text-[#a06a39]">{new Date(f.savedAt).toLocaleDateString("zh-TW")} · 食材：{f.ingredientsUsed.slice(0,4).join("、")}{f.ingredientsUsed.length > 4 ? "..." : ""}</div>
+                </div>
+              </div>
+            ))}</div>
+          )}
+        </div>
+      </div>}
+
+      {/* 👨‍🍳 步驟料理助手 */}
+      {cookingStep !== null && recipe && (
+        <div className="fixed inset-0 z-50 flex items-end bg-[#2f1507]/60 p-4">
+          <div className="handdrawn-paper mx-auto w-full max-w-[430px] max-h-[82vh] overflow-y-auto rounded-[2rem] p-6" onClick={(e) => e.stopPropagation()}>
+            {/* 進度條 */}
+            <div className="mb-5">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-black tracking-[0.12em] text-[#a06a39]">料理進行中</span>
+                <span className="text-sm font-black text-[#8b5430]">步驟 {cookingStep + 1} / {recipe.cookingSteps.length}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-[#f3dfbe]">
+                <div className="h-full rounded-full bg-[linear-gradient(90deg,#8b5430,#c4895a)] transition-all duration-500" style={{ width: `${((cookingStep + 1) / recipe.cookingSteps.length) * 100}%` }} />
+              </div>
+            </div>
+
+            {/* 步驟標題 */}
+            <div className="mb-4 flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#8b5430] text-lg font-black text-white">
+                {(cookingStep + 1).toString().padStart(2, "0")}
+              </span>
+              <div>
+                <div className="text-xs font-black tracking-[0.12em] text-[#ac6d35]">STEP {cookingStep + 1}</div>
+                <div className="text-sm font-bold text-[#7a4b2b]">總共 {recipe.cookingSteps.length} 個步驟</div>
+              </div>
+            </div>
+
+            {/* 步驟內容 */}
+            <div className="sketch-card mb-6 min-h-[160px] p-5">
+              <p className="text-base leading-8 text-[#5f361d]">{recipe.cookingSteps[cookingStep]}</p>
+            </div>
+
+            {/* 導航按鈕 */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setCookingStep((prev) => (prev !== null && prev > 0 ? prev - 1 : prev))}
+                disabled={cookingStep === 0}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-[1.7rem] px-5 py-4 text-base font-black transition-all active:scale-95 ${
+                  cookingStep === 0
+                    ? "cursor-not-allowed bg-[#e8d5b8] text-[#b08a62]"
+                    : "handdrawn-badge text-[#74452a]"
+                }`}
+              >
+                ⬅ 上一步
+              </button>
+              {cookingStep < recipe.cookingSteps.length - 1 ? (
+                <button
+                  onClick={() => setCookingStep((prev) => (prev !== null ? prev + 1 : prev))}
+                  className="handdrawn-button flex flex-1 items-center justify-center gap-2 rounded-[1.7rem] px-5 py-4 text-base font-black text-white transition-all active:scale-95"
+                >
+                  下一步 ➡
+                </button>
+              ) : (
+                <button
+                  onClick={() => setCookingStep(null)}
+                  className="handdrawn-button flex flex-1 items-center justify-center gap-2 rounded-[1.7rem] px-5 py-4 text-base font-black text-white transition-all active:scale-95"
+                >
+                  ✅ 完成料理
+                </button>
+              )}
+            </div>
+
+            {/* 關閉按鈕 */}
+            <button
+              onClick={() => setCookingStep(null)}
+              className="mt-4 w-full rounded-full border border-[#dcb890] px-5 py-3 text-sm font-bold text-[#8d6139] transition-all active:scale-95"
+            >
+              關閉料理模式
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
