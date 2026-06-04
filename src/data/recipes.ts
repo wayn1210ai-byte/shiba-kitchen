@@ -1,4 +1,14 @@
-import type { Recipe } from "@/pages/Home";
+console.log("RECIPES_MODULE_LOADED_88888");
+
+type Recipe = {
+  dishName: string;
+  cookingTime: string;
+  shibaTalk: string;
+  cookingSteps: string[];
+  ingredientsUsed: string[];
+  seasoningNotes: string[];
+  platingNotes: string;
+};
 
 export const builtinRecipes: Recipe[] = [
   // ===== 肉類為主（豬肉） =====

@@ -1,4 +1,5 @@
 import { Toaster } from "@/components/ui/sonner";
+import TestComp from "./TestComp";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { ThemeProvider } from "@/contexts/ThemeContext";
