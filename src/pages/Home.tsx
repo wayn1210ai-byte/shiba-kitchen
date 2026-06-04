@@ -348,17 +348,22 @@ function reorder(items: string[], fromItem: string, toItem: string) {
 
 function DishIllustration({ recipe, selected }: { recipe: Recipe; selected: string[] }) {
   const dish = recipe.dishName;
-  const hasSeafood = selected.some((item) => ["蝦子", "蛤蜊", "鮭魚", "透抽"].includes(item));
-  const hasLeafy = selected.some((item) => ["高麗菜", "空心菜", "地瓜葉", "青蔥"].includes(item));
+  const hasSeafood = selected.some((item) => ["蝦子", "蛤蜊", "鮭魚", "透抽", "蚵仔", "小卷", "干貝", "鱸魚", "鯛魚"].includes(item));
+  const hasLeafy = selected.some((item) => ["高麗菜", "空心菜", "地瓜葉", "青蔥", "大白菜", "韭菜", "豆芽菜", "芹菜", "香菜", "九層塔", "地瓜葉"].includes(item));
   const hasEgg = selected.some((item) => ["雞蛋", "皮蛋", "鹹蛋", "雞蛋豆腐"].includes(item));
   const hasRice = selected.includes("白飯") || /丼|飯|燴飯/.test(dish);
-  const hasNoodle = selected.some((item) => ["麵條", "意麵", "泡麵", "冬粉", "米粉"].includes(item)) || /麵|粉/.test(dish);
-  const hasSoup = /湯|鍋|煮|燉/.test(dish);
+  const hasNoodle = selected.some((item) => ["麵條", "意麵", "泡麵", "冬粉", "米粉", "烏龍麵", "油麵", "水餃", "餛飩"].includes(item)) || /麵|粉/.test(dish);
+  const hasSoup = /湯|鍋|煮|燉|羹/.test(dish);
   const hasGrill = /烤|炙|燒|串/.test(dish);
-  const hasMushroom = selected.some((item) => ["金針菇", "香菇", "杏鮑菇"].includes(item));
-  const hasMeat = selected.some((item) => ["豬肉片", "五花肉", "絞肉", "雞胸肉", "雞腿肉", "牛肉片", "香腸", "貢丸"].includes(item));
-  const hasTofu = selected.some((item) => ["傳統豆腐", "嫩豆腐", "雞蛋豆腐", "百頁豆腐", "豆皮", "豆乾"].includes(item));
-  const layout: "bowl" | "plate" | "pot" | "grill" = hasSoup ? "pot" : hasGrill ? "grill" : hasRice || hasNoodle ? "bowl" : "plate";
+  const hasSteam = /蒸/.test(dish);
+  const hasFry = /炸|酥/.test(dish);
+  const hasMushroom = selected.some((item) => ["金針菇", "香菇", "杏鮑菇", "鴻禧菇", "木耳"].includes(item));
+  const hasMeat = selected.some((item) => ["豬肉片", "五花肉", "絞肉", "豬小排", "豬肝", "大腸", "雞胸肉", "雞腿肉", "雞翅", "牛肉片", "牛腱", "鴨肉", "香腸", "貢丸", "培根", "火腿"].includes(item));
+  const hasTofu = selected.some((item) => ["傳統豆腐", "嫩豆腐", "雞蛋豆腐", "百頁豆腐", "豆皮", "豆乾", "油豆腐", "臭豆腐"].includes(item));
+  const hasPickle = selected.some((item) => ["泡菜", "酸菜", "榨菜", "菜脯"].includes(item));
+  const hasCorn = selected.includes("玉米");
+  const hasPotato = selected.some((item) => ["馬鈴薯", "地瓜", "南瓜"].includes(item));
+  const layout: "bowl" | "plate" | "pot" | "grill" | "steam" | "stir" = hasSteam ? "steam" : hasFry ? "grill" : hasSoup ? "pot" : hasGrill ? "grill" : hasRice || hasNoodle ? "bowl" : "plate";
 
   return (
     <div className="sketch-card relative overflow-hidden p-4">
@@ -404,6 +409,18 @@ function DishIllustration({ recipe, selected }: { recipe: Recipe; selected: stri
               <rect x="82" y="106" width="156" height="68" rx="12" fill="#2f2b29" stroke="#7a4a2b" strokeWidth="3" />
               <path d="M94 118h132M94 134h132M94 150h132M94 166h132" stroke="#70645d" strokeWidth="4" />
               <path d="M110 182c8-10 13-17 18-28M154 182c8-10 13-17 18-28M198 182c8-10 13-17 18-28" stroke="#ffb05f" strokeWidth="5" strokeLinecap="round" opacity="0.8" />
+            </g>
+          )}
+
+          {layout === "steam" && (
+            <g>
+              <ellipse cx="160" cy="148" rx="112" ry="24" fill="#4a2d1c" opacity="0.10" />
+              <rect x="68" y="82" width="184" height="94" rx="20" fill="#e8dcc8" stroke="#7a4a2b" strokeWidth="5" />
+              <ellipse cx="160" cy="86" rx="96" ry="22" fill="#dfd0b8" stroke="#7a4a2b" strokeWidth="4" />
+              <path d="M98 56c8-12 18-16 28-10 10 6 10 18 2 24M162 52c8-14 20-18 30-10 10 8 8 20-2 28M212 60c6-10 14-14 22-8 8 6 6 16-2 22" stroke="#d4d4d4" strokeWidth="5" strokeLinecap="round" opacity="0.6" fill="none" />
+              <path d="M108 66c6-8 14-10 20-5 6 5 4 12-4 16M172 62c6-10 16-12 22-5 6 7 4 14-4 18M206 64c4-8 10-10 16-5 6 5 4 10-2 14" stroke="#e8e0d0" strokeWidth="4" strokeLinecap="round" opacity="0.5" fill="none" />
+              <ellipse cx="160" cy="96" rx="78" ry="16" fill="#fff9f0" stroke="#7a4a2b" strokeWidth="3.5" />
+              <path d="M100 92c12 6 26 8 40 4 14 5 28 6 44 2 14 5 28 5 38-2" stroke="#ece4d4" strokeWidth="6" strokeLinecap="round" fill="none" />
             </g>
           )}
 
