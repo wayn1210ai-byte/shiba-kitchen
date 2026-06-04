@@ -515,7 +515,6 @@ export default function Home() {
   const [showAd, setShowAd] = useState(false);
   const [canCloseAd, setCanCloseAd] = useState(false);
   const [cookingMode, setCookingMode] = useState<CookingMode>("stir");
-  const [cookingStep, setCookingStep] = useState<number | null>(null);
   const [ingredientOrders, setIngredientOrders] = useState<Record<string, string[]>>(categoryOrderMap);
   const [tabOrder, setTabOrder] = useState<string[]>(tabOrderSeed);
   const [draggingTab, setDraggingTab] = useState<string | null>(null);
@@ -838,7 +837,7 @@ export default function Home() {
                       )}
                     </div>
                   </div>
-                  <div className="rounded-[1.5rem] border border-[#d8b486] bg-white/55 p-4"><div className="flex items-center justify-between"><div className="label-row">料理步驟</div><button onClick={() => setCookingStep(0)} className="rounded-full bg-[#8b5430] px-4 py-2 text-xs font-black text-white shadow-[0_4px_10px_rgba(139,84,48,0.3)] hover:bg-[#6d3f1f] transition-all active:scale-95">👨‍🍳 開始料理</button></div><div className="mt-4 space-y-4">{recipe.cookingSteps.map((step, i) => <div key={i} className="sketch-card p-4"><div className="mb-2 flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#8b5430] text-xs font-black text-white">{(i + 1).toString().padStart(2, "0")}</span><span className="text-sm font-black tracking-[0.12em] text-[#ac6d35]">步驟 {i + 1}</span></div><p className="text-sm leading-7 text-[#6f4125]">{step}</p></div>)}</div></div>
+                  <div className="rounded-[1.5rem] border border-[#d8b486] bg-white/55 p-4"><div className="label-row">👨‍🍳 料理步驟</div><div className="mt-4 space-y-4">{recipe.cookingSteps.map((step, i) => <div key={i} className="sketch-card p-4"><div className="mb-2 flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#8b5430] text-xs font-black text-white">{(i + 1).toString().padStart(2, "0")}</span><span className="text-sm font-black tracking-[0.12em] text-[#ac6d35]">步驟 {i + 1}</span></div><p className="text-sm leading-7 text-[#6f4125]">{step}</p></div>)}</div></div>
                   {/* 相似食譜推薦 */}
                   {(() => {
                     const similar = findSimilarRecipes(recipe, 3);
@@ -918,77 +917,7 @@ export default function Home() {
         </div>
       </div>}
 
-      {/* 👨‍🍳 步驟料理助手 */}
-      {cookingStep !== null && recipe && (
-        <div className="fixed inset-0 z-50 flex items-end bg-[#2f1507]/60 p-4">
-          <div className="handdrawn-paper mx-auto w-full max-w-[430px] max-h-[82vh] overflow-y-auto rounded-[2rem] p-6" onClick={(e) => e.stopPropagation()}>
-            {/* 進度條 */}
-            <div className="mb-5">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-black tracking-[0.12em] text-[#a06a39]">料理進行中</span>
-                <span className="text-sm font-black text-[#8b5430]">步驟 {cookingStep + 1} / {recipe.cookingSteps.length}</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-[#f3dfbe]">
-                <div className="h-full rounded-full bg-[linear-gradient(90deg,#8b5430,#c4895a)] transition-all duration-500" style={{ width: `${((cookingStep + 1) / recipe.cookingSteps.length) * 100}%` }} />
-              </div>
-            </div>
 
-            {/* 步驟標題 */}
-            <div className="mb-4 flex items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#8b5430] text-lg font-black text-white">
-                {(cookingStep + 1).toString().padStart(2, "0")}
-              </span>
-              <div>
-                <div className="text-xs font-black tracking-[0.12em] text-[#ac6d35]">STEP {cookingStep + 1}</div>
-                <div className="text-sm font-bold text-[#7a4b2b]">總共 {recipe.cookingSteps.length} 個步驟</div>
-              </div>
-            </div>
-
-            {/* 步驟內容 */}
-            <div className="sketch-card mb-6 min-h-[160px] p-5">
-              <p className="text-base leading-8 text-[#5f361d]">{recipe.cookingSteps[cookingStep]}</p>
-            </div>
-
-            {/* 導航按鈕 */}
-            <div className="flex gap-3">
-              <button
-                onClick={() => setCookingStep((prev) => (prev !== null && prev > 0 ? prev - 1 : prev))}
-                disabled={cookingStep === 0}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-[1.7rem] px-5 py-4 text-base font-black transition-all active:scale-95 ${
-                  cookingStep === 0
-                    ? "cursor-not-allowed bg-[#e8d5b8] text-[#b08a62]"
-                    : "handdrawn-badge text-[#74452a]"
-                }`}
-              >
-                ⬅ 上一步
-              </button>
-              {cookingStep < recipe.cookingSteps.length - 1 ? (
-                <button
-                  onClick={() => setCookingStep((prev) => (prev !== null ? prev + 1 : prev))}
-                  className="handdrawn-button flex flex-1 items-center justify-center gap-2 rounded-[1.7rem] px-5 py-4 text-base font-black text-white transition-all active:scale-95"
-                >
-                  下一步 ➡
-                </button>
-              ) : (
-                <button
-                  onClick={() => setCookingStep(null)}
-                  className="handdrawn-button flex flex-1 items-center justify-center gap-2 rounded-[1.7rem] px-5 py-4 text-base font-black text-white transition-all active:scale-95"
-                >
-                  ✅ 完成料理
-                </button>
-              )}
-            </div>
-
-            {/* 關閉按鈕 */}
-            <button
-              onClick={() => setCookingStep(null)}
-              className="mt-4 w-full rounded-full border border-[#dcb890] px-5 py-3 text-sm font-bold text-[#8d6139] transition-all active:scale-95"
-            >
-              關閉料理模式
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
