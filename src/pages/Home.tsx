@@ -7,12 +7,13 @@ import { useEffect, useMemo, useState, type JSX } from "react";
 import { ChefHat, GripVertical, RefreshCcw, Settings2, Soup, Timer, X } from "lucide-react";
 import { toast } from "sonner";
 import mascotImage from "@/assets/shiba-chef-portrait.png";
+import { matchBuiltinRecipe } from "@/data/recipes";
 
 type Screen = "home" | "cooking" | "menu";
 type Provider = "openai" | "gemini";
 type CookingMode = "stir" | "boil" | "grill";
 
-type Recipe = {
+export type Recipe = {
   dishName: string;
   cookingTime: string;
   shibaTalk: string;
@@ -21,7 +22,7 @@ type Recipe = {
   seasoningNotes: string[];
   platingNotes: string;
 };
-type SavedRecipe = Recipe & { savedAt: string; id: string };
+export type SavedRecipe = Recipe & { savedAt: string; id: string };
 
 const categories = [
   ["meat", "肉類與海鮮", "🥩", ["豬肉片", "五花肉", "絞肉", "雞胸肉", "雞腿肉", "牛肉片", "蝦子", "蛤蜊", "鮭魚", "透抽"]],
@@ -192,9 +193,16 @@ const fallbackRecipe = (ings: string[]): Recipe => ({
 });
 
 async function fetchRecipe(provider: Provider, apiKey: string, baseUrl: string, ingredients: string[]) {
+  // First try built-in recipe library for faster result
+  const builtin = matchBuiltinRecipe(ingredients);
+  if (builtin) {
+    await new Promise((r) => setTimeout(r, 1800)); // Keep cooking animation feel
+    return builtin;
+  }
+  // Fall back to AI if no built-in match and API key is set
   if (!apiKey.trim()) {
     await new Promise((r) => setTimeout(r, 2200));
-    return fallbackRecipe(ingredients);
+    return matchBuiltinRecipe(ingredients) || fallbackRecipe(ingredients);
   }
   if (provider === "openai") {
     const res = await fetch(baseUrl || "https://api.openai.com/v1/chat/completions", {
@@ -423,10 +431,17 @@ export default function Home() {
       goIfReady();
     }).catch(() => {
       if (dead) return;
-      toast.error("AI 連線失敗，先用示範食譜救場汪！");
-      setRecipe(fallbackRecipe(selected));
-      apiDone = true;
-      goIfReady();
+      if (matchBuiltinRecipe(selected)) {
+        setRecipe(matchBuiltinRecipe(selected)!);
+        toast.success("內建食譜庫已為你找到合適料理汪！");
+        apiDone = true;
+        goIfReady();
+      } else {
+        toast.error("AI 連線失敗，先用示範食譜救場汪！");
+        setRecipe(fallbackRecipe(selected));
+        apiDone = true;
+        goIfReady();
+      }
     });
     return () => { dead = true; clearTimeout(t1); clearTimeout(t2); };
   }, [screen, provider, apiKey, baseUrl, selected]);
