@@ -513,6 +513,7 @@ export default function Home() {
   const [showAd, setShowAd] = useState(false);
   const [canCloseAd, setCanCloseAd] = useState(false);
   const [cookingMode, setCookingMode] = useState<CookingMode>("stir");
+  const [cookingStep, setCookingStep] = useState<number | null>(null);
   const [ingredientOrders, setIngredientOrders] = useState<Record<string, string[]>>(categoryOrderMap);
   const [tabOrder, setTabOrder] = useState<string[]>(tabOrderSeed);
   const [draggingTab, setDraggingTab] = useState<string | null>(null);
@@ -807,13 +808,57 @@ export default function Home() {
                   <div className="sketch-card p-4"><div className="label-row">菜名</div><div className="mt-2 text-2xl font-black text-[#5f3219]">{recipe.dishName}</div></div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="sketch-card p-4"><div className="label-row"><Timer className="h-4 w-4" /> 烹飪時間</div><div className="mt-2 text-lg font-black">{recipe.cookingTime}</div></div>
-                    <div className="sketch-card p-4"><div className="label-row"><ChefHat className="h-4 w-4" /> 大將碎碎念</div><p className="mt-2 text-sm leading-7 text-[#74452a]">{recipe.shibaTalk}</p></div>
+                    <div className="sketch-card p-4"><div className="label-row">🍳 難易度</div><p className="mt-2 text-sm leading-7 font-bold text-[#74452a]">步驟 {recipe.cookingSteps.length} 道 · 適合中級料理人</p></div>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="sketch-card p-4"><div className="label-row">本次使用食材</div><div className="mt-3 flex flex-wrap gap-2">{recipe.ingredientsUsed.map((item) => <span key={item} className="rounded-full bg-[#f3dfbe] px-3 py-1 text-sm font-bold text-[#74452a]">{item}</span>)}</div></div>
                     <div className="sketch-card p-4"><div className="label-row">調味重點</div><div className="mt-3 space-y-2">{recipe.seasoningNotes.map((note, i) => <div key={i} className="rounded-2xl bg-[#fff8ee] px-3 py-2 text-sm font-bold text-[#74452a]">{note}</div>)}</div></div>
                   </div>
-                  <div className="rounded-[1.5rem] border border-[#d8b486] bg-white/55 p-4"><div className="label-row">料理步驟</div><div className="mt-4 space-y-4">{recipe.cookingSteps.map((step, i) => <div key={i} className="sketch-card p-4"><div className="mb-2 text-sm font-black tracking-[0.12em] text-[#ac6d35]">STEP {i + 1}</div><p className="text-sm leading-7 text-[#6f4125]">{step}</p></div>)}</div></div>
+                  {/* 小秘訣專區 */}
+                  <div className="rounded-[1.5rem] border border-[#d8b486] bg-white/55 p-4">
+                    <div className="label-row">💡 小柴子的料理小秘訣</div>
+                    <div className="mt-4 flex flex-col gap-3">
+                      <div className="sketch-card flex gap-3 p-4">
+                        <span className="mt-0.5 text-xl">🐶</span>
+                        <div>
+                          <div className="mb-1 text-sm font-black text-[#8b5430]">大將的話</div>
+                          <p className="text-sm leading-7 text-[#6f4125]">{recipe.shibaTalk}</p>
+                        </div>
+                      </div>
+                      {recipe.platingNotes && (
+                        <div className="sketch-card flex gap-3 p-4">
+                          <span className="mt-0.5 text-xl">🍽️</span>
+                          <div>
+                            <div className="mb-1 text-sm font-black text-[#8b5430]">擺盤小技巧</div>
+                            <p className="text-sm leading-7 text-[#6f4125]">{recipe.platingNotes}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="rounded-[1.5rem] border border-[#d8b486] bg-white/55 p-4"><div className="flex items-center justify-between"><div className="label-row">料理步驟</div><button onClick={() => setCookingStep(0)} className="rounded-full bg-[#8b5430] px-4 py-2 text-xs font-black text-white shadow-[0_4px_10px_rgba(139,84,48,0.3)] hover:bg-[#6d3f1f] transition-all active:scale-95">👨‍🍳 開始料理</button></div><div className="mt-4 space-y-4">{recipe.cookingSteps.map((step, i) => <div key={i} className="sketch-card p-4"><div className="mb-2 flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#8b5430] text-xs font-black text-white">{(i + 1).toString().padStart(2, "0")}</span><span className="text-sm font-black tracking-[0.12em] text-[#ac6d35]">步驟 {i + 1}</span></div><p className="text-sm leading-7 text-[#6f4125]">{step}</p></div>)}</div></div>
+                  {/* 相似食譜推薦 */}
+                  {(() => {
+                    const similar = findSimilarRecipes(recipe, 3);
+                    if (similar.length === 0) return null;
+                    return (
+                      <div className="rounded-[1.5rem] border border-[#d8b486] bg-white/55 p-4">
+                        <div className="label-row">🍽️ 相似食譜推薦</div>
+                        <div className="mt-4 flex flex-col gap-3">
+                          {similar.map((sr) => (
+                            <button key={sr.dishName} onClick={() => setRecipe(sr)} className="sketch-card flex items-center gap-3 p-3 text-left transition hover:bg-[#fff2de] active:scale-[0.98]">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f3dfbe] text-base">🍳</div>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-black text-[#5f3219]">{sr.dishName}</div>
+                                <div className="mt-0.5 text-[11px] font-bold text-[#a06a39]">{sr.cookingTime} · 共享 {scoreRecipe(sr, recipe.ingredientsUsed)} 種食材</div>
+                              </div>
+                              <span className="text-lg">→</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -870,6 +915,78 @@ export default function Home() {
           )}
         </div>
       </div>}
+
+      {/* 👨‍🍳 步驟料理助手 */}
+      {cookingStep !== null && recipe && (
+        <div className="fixed inset-0 z-50 flex items-end bg-[#2f1507]/60 p-4">
+          <div className="handdrawn-paper mx-auto w-full max-w-[430px] max-h-[82vh] overflow-y-auto rounded-[2rem] p-6" onClick={(e) => e.stopPropagation()}>
+            {/* 進度條 */}
+            <div className="mb-5">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-black tracking-[0.12em] text-[#a06a39]">料理進行中</span>
+                <span className="text-sm font-black text-[#8b5430]">步驟 {cookingStep + 1} / {recipe.cookingSteps.length}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-[#f3dfbe]">
+                <div className="h-full rounded-full bg-[linear-gradient(90deg,#8b5430,#c4895a)] transition-all duration-500" style={{ width: `${((cookingStep + 1) / recipe.cookingSteps.length) * 100}%` }} />
+              </div>
+            </div>
+
+            {/* 步驟標題 */}
+            <div className="mb-4 flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#8b5430] text-lg font-black text-white">
+                {(cookingStep + 1).toString().padStart(2, "0")}
+              </span>
+              <div>
+                <div className="text-xs font-black tracking-[0.12em] text-[#ac6d35]">STEP {cookingStep + 1}</div>
+                <div className="text-sm font-bold text-[#7a4b2b]">總共 {recipe.cookingSteps.length} 個步驟</div>
+              </div>
+            </div>
+
+            {/* 步驟內容 */}
+            <div className="sketch-card mb-6 min-h-[160px] p-5">
+              <p className="text-base leading-8 text-[#5f361d]">{recipe.cookingSteps[cookingStep]}</p>
+            </div>
+
+            {/* 導航按鈕 */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setCookingStep((prev) => (prev !== null && prev > 0 ? prev - 1 : prev))}
+                disabled={cookingStep === 0}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-[1.7rem] px-5 py-4 text-base font-black transition-all active:scale-95 ${
+                  cookingStep === 0
+                    ? "cursor-not-allowed bg-[#e8d5b8] text-[#b08a62]"
+                    : "handdrawn-badge text-[#74452a]"
+                }`}
+              >
+                ⬅ 上一步
+              </button>
+              {cookingStep < recipe.cookingSteps.length - 1 ? (
+                <button
+                  onClick={() => setCookingStep((prev) => (prev !== null ? prev + 1 : prev))}
+                  className="handdrawn-button flex flex-1 items-center justify-center gap-2 rounded-[1.7rem] px-5 py-4 text-base font-black text-white transition-all active:scale-95"
+                >
+                  下一步 ➡
+                </button>
+              ) : (
+                <button
+                  onClick={() => setCookingStep(null)}
+                  className="handdrawn-button flex flex-1 items-center justify-center gap-2 rounded-[1.7rem] px-5 py-4 text-base font-black text-white transition-all active:scale-95"
+                >
+                  ✅ 完成料理
+                </button>
+              )}
+            </div>
+
+            {/* 關閉按鈕 */}
+            <button
+              onClick={() => setCookingStep(null)}
+              className="mt-4 w-full rounded-full border border-[#dcb890] px-5 py-3 text-sm font-bold text-[#8d6139] transition-all active:scale-95"
+            >
+              關閉料理模式
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3609,5 +3726,16 @@ function matchBuiltinRecipe(selected: string[]): Recipe | null {
 
 function suggestIngredients(recipe: Recipe): string[] {
   return recipe.ingredientsUsed;
+}
+
+/** 找出與目前食譜最相似的 N 道食譜（依共享食材數排序） */
+function findSimilarRecipes(recipe: Recipe, count: number = 3): Recipe[] {
+  return builtinRecipes
+    .filter((r) => r.dishName !== recipe.dishName)
+    .map((r) => ({ recipe: r, score: scoreRecipe(r, recipe.ingredientsUsed) }))
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, count)
+    .map((r) => r.recipe);
 }
 
