@@ -691,7 +691,7 @@ export default function Home() {
                 <h1 className="font-serif-jp text-[2.2rem] font-black tracking-[0.12em] text-[#5d311b]">阿柴食堂</h1>
                 <div className="handdrawn-badge mx-auto mt-3 inline-flex rounded-full px-5 py-2 text-[1rem] font-bold">老闆，今天冰箱剩什麼？汪！</div>
               </div>
-              <div className="handdrawn-tabbar mt-6 flex gap-2 overflow-x-auto rounded-[2rem] p-2">
+              <div className="handdrawn-tabbar mt-6 flex flex-wrap justify-center gap-2 rounded-[2rem] p-2">
                 {orderedTabs.map(([key, label, emoji]) => (
                   <button
                     key={key}
